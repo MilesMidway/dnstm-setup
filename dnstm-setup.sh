@@ -1849,6 +1849,7 @@ main() {
     step_ssh_user
     step_tests
     step_summary
+    unset SSH_PASS 2>/dev/null || true
 }
 
 if [[ "$ADD_DOMAIN_MODE" == true ]]; then
