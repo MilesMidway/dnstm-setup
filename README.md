@@ -433,6 +433,17 @@ curl --socks5 127.0.0.1:19801 https://api.ipify.org
 - For DNSTT, verify the public key matches the one shown during setup
 - Check that port 53 UDP and TCP are open in your hosting provider's firewall panel
 
+## Acknowledgments
+
+This project builds on the incredible work of these open-source projects:
+
+| Protocol | Author | Repository | Description |
+|---|---|---|---|
+| **DNSTT** | David Fifield | [bamsoftware.com/software/dnstt](https://www.bamsoftware.com/software/dnstt/) | DNS tunnel using Noise protocol with Curve25519 encryption. Supports UDP DNS, DoH, and DoT. |
+| **Slipstream** | EndPositive | [EndPositive/slipstream](https://github.com/EndPositive/slipstream) | High-performance covert channel over DNS, powered by QUIC multipath with adaptive congestion control. |
+
+Thank you to David Fifield and EndPositive for making censorship circumvention possible through their research and open-source contributions.
+
 ## Related Projects
 
 - [dnstm](https://github.com/net2share/dnstm) — DNS Tunnel Manager CLI
