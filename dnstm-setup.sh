@@ -613,6 +613,7 @@ NoNewPrivileges=yes
 PrivateTmp=yes
 PrivateDevices=yes
 ProtectSystem=strict
+ReadWritePaths=/etc/dnstm
 ProtectHome=yes
 ProtectControlGroups=yes
 ProtectKernelTunables=yes
@@ -621,7 +622,6 @@ ProtectKernelLogs=yes
 ProtectClock=yes
 ProtectHostname=yes
 LockPersonality=yes
-MemoryDenyWriteExecute=yes
 RestrictRealtime=yes
 RestrictSUIDSGID=yes
 RestrictNamespaces=yes
@@ -707,17 +707,28 @@ apply_service_hardening() {
 
     systemctl daemon-reload
 
+    local hardening_ok=true
     for unit in $dnstm_units microsocks.service; do
         if ! unit_exists "$unit"; then
             continue
         fi
         if systemctl is-enabled "$unit" &>/dev/null || systemctl is-active --quiet "$unit" 2>/dev/null; then
             if ! systemctl restart "$unit" 2>/dev/null; then
-                print_fail "Failed to restart hardened unit: $unit"
-                return 1
+                print_warn "Failed to restart hardened unit: $unit — rolling back"
+                local dropin="/etc/systemd/system/${unit}.d/20-hardening.conf"
+                rm -f "$dropin"
+                systemctl daemon-reload
+                systemctl reset-failed "$unit" 2>/dev/null || true
+                systemctl restart "$unit" 2>/dev/null || true
+                hardening_ok=false
             fi
         fi
     done
+
+    if [[ "$hardening_ok" != "true" ]]; then
+        print_warn "Some units could not be hardened; services restored without hardening"
+        return 1
+    fi
 
     enable_autostart_units
     print_ok "Applied systemd hardening overrides"
