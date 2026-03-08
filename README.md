@@ -19,6 +19,7 @@ Deploys [dnstm](https://github.com/net2share/dnstm) DNS tunnel servers with **Sl
 - [❓ In-TUI Help System](#-in-tui-help-system)
 - [📱 Client Apps](#-client-apps)
 - [🛠️ Management Commands](#️-management-commands)
+- [👤 SSH Tunnel User Management](#-ssh-tunnel-user-management)
 - [🗑️ Uninstall](#️-uninstall)
 - [📖 Manual Setup Guide](#-manual-setup-guide)
 - [🔧 Troubleshooting](#-troubleshooting)
@@ -340,6 +341,9 @@ sudo bash dnstm-setup.sh --mtu 1200
 # 🌐 Add a backup domain with custom MTU
 sudo bash dnstm-setup.sh --add-domain --mtu 1200
 
+# 👤 Manage SSH tunnel users (add, list, update, delete)
+sudo bash dnstm-setup.sh --users
+
 # 🗑️ Remove all installed components
 sudo bash dnstm-setup.sh --uninstall
 
@@ -482,6 +486,30 @@ dnstm router start
 # 🧪 Test the SOCKS proxy locally (check port with: ss -tlnp | grep microsocks)
 curl --socks5 127.0.0.1:<MICROSOCKS_PORT> https://api.ipify.org
 ```
+
+---
+
+## 👤 SSH Tunnel User Management
+
+Manage SSH tunnel users after setup with the built-in user management TUI:
+
+```bash
+sudo bash dnstm-setup.sh --users
+```
+
+This opens an interactive menu:
+
+| Option | Action |
+|---|---|
+| **1** | **List users** — show all SSH tunnel users |
+| **2** | **Add user** — create a new tunnel user (with password or auto-generated) |
+| **3** | **Change password** — update an existing user's password |
+| **4** | **Delete user** — remove a user (with confirmation) |
+| **0** | **Exit** |
+
+> **What are SSH tunnel users?** These are restricted system users that can only create SSH tunnels (SOCKS proxy, port forwarding) — they have no shell access and cannot run commands on your server. They're required for the SSH-based tunnels (`s2` and `ds2` subdomains).
+
+If `sshtun-user` is not installed, the script will automatically download and configure it on first run.
 
 ---
 
@@ -740,6 +768,18 @@ sudo bash dnstm-setup.sh --add-domain
 
 اگر یک دامنه مسدود شود، دامنه دیگر همچنان کار می‌کند.
 
+### مدیریت کاربران SSH
+
+بعد از نصب، می‌توانید کاربران تانل SSH رو مدیریت کنید:
+
+</div>
+
+```bash
+sudo bash dnstm-setup.sh --users
+```
+
+<div dir="rtl">
+
 ---
 
 ## 🌍 تنظیمات DNS در Cloudflare
@@ -907,6 +947,34 @@ curl --socks5 127.0.0.1:<MICROSOCKS_PORT> https://api.ipify.org
 ```
 
 <div dir="rtl">
+
+---
+
+## 👤 مدیریت کاربران SSH
+
+بعد از نصب، کاربران تانل SSH رو با منوی مدیریتی مدیریت کنید:
+
+</div>
+
+```bash
+sudo bash dnstm-setup.sh --users
+```
+
+<div dir="rtl">
+
+این دستور یک منوی تعاملی باز می‌کند:
+
+| گزینه | عملکرد |
+|---|---|
+| **1** | **لیست کاربران** — نمایش تمام کاربران تانل SSH |
+| **2** | **افزودن کاربر** — ساخت کاربر جدید (با رمز دستی یا خودکار) |
+| **3** | **تغییر رمز** — بروزرسانی رمز عبور یک کاربر |
+| **4** | **حذف کاربر** — حذف کاربر (با تأیید) |
+| **0** | **خروج** |
+
+> **کاربران تانل SSH چی هستن؟** کاربران محدود سیستمی هستن که فقط می‌تونن تانل SSH بزنن (پروکسی SOCKS، فوروارد پورت) — دسترسی shell ندارن و نمی‌تونن روی سرور شما دستوری اجرا کنن. برای تانل‌های SSH (ساب‌دامین‌های `s2` و `ds2`) لازمن.
+
+اگر `sshtun-user` نصب نباشد، اسکریپت خودکار آن را دانلود و تنظیم می‌کند.
 
 ---
 

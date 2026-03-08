@@ -474,6 +474,7 @@ show_help() {
     echo "  --help         Show this help message"
     echo "  --about        Show project information and credits"
     echo "  --add-domain   Add another domain to an existing server (backup/fallback)"
+    echo "  --users        Manage SSH tunnel users (add, list, update, delete)"
     echo "  --mtu <value>  Set DNSTT MTU size (512-1400, default: 1232)"
     echo "  --harden       Apply service and resolver hardening to an existing setup"
     echo "  --uninstall    Remove all installed components"
@@ -900,10 +901,137 @@ do_uninstall() {
     echo ""
 }
 
+# ─── User Management TUI ──────────────────────────────────────────────────────
+
+do_manage_users() {
+    banner
+    print_header "SSH Tunnel User Management"
+
+    # Check root
+    if [[ $EUID -ne 0 ]]; then
+        print_fail "Not running as root. Please run with: sudo bash $0 --users"
+        exit 1
+    fi
+
+    # Install sshtun-user if not present
+    if ! command -v sshtun-user &>/dev/null; then
+        print_info "sshtun-user not found. Installing..."
+        if curl -fsSL -o /usr/local/bin/sshtun-user https://github.com/net2share/sshtun-user/releases/latest/download/sshtun-user-linux-amd64; then
+            chmod +x /usr/local/bin/sshtun-user
+            print_ok "Downloaded sshtun-user"
+        else
+            print_fail "Failed to download sshtun-user. Check your internet connection."
+            exit 1
+        fi
+
+        # Run initial configure
+        print_info "Applying SSH security configuration..."
+        sshtun-user configure 2>&1 || true
+        print_ok "SSH configuration applied"
+        echo ""
+    fi
+
+    while true; do
+        echo ""
+        echo -e "  ${BOLD}SSH Tunnel User Management${NC}"
+        echo -e "  ${DIM}────────────────────────────────────────${NC}"
+        echo ""
+        echo -e "  ${BOLD}1${NC}  List users"
+        echo -e "  ${BOLD}2${NC}  Add user"
+        echo -e "  ${BOLD}3${NC}  Change password"
+        echo -e "  ${BOLD}4${NC}  Delete user"
+        echo -e "  ${BOLD}0${NC}  Exit"
+        echo ""
+
+        local choice
+        read -rp "  Select [0-4]: " choice
+
+        case "$choice" in
+            1)
+                echo ""
+                print_info "SSH tunnel users:"
+                echo ""
+                sshtun-user list 2>&1 || print_warn "No users found or sshtun-user error"
+                ;;
+            2)
+                echo ""
+                local new_user new_pass
+                new_user=$(prompt_input "Enter username for new tunnel user")
+                if [[ -z "$new_user" ]]; then
+                    print_fail "Username cannot be empty"
+                    continue
+                fi
+                new_pass=$(prompt_input "Enter password (leave blank to auto-generate)")
+                echo ""
+                if [[ -n "$new_pass" ]]; then
+                    if sshtun-user create "$new_user" --insecure-password "$new_pass" 2>&1; then
+                        print_ok "User '${new_user}' created"
+                    else
+                        print_fail "Failed to create user '${new_user}'"
+                    fi
+                else
+                    if sshtun-user create "$new_user" 2>&1; then
+                        print_ok "User '${new_user}' created"
+                    else
+                        print_fail "Failed to create user '${new_user}'"
+                    fi
+                fi
+                ;;
+            3)
+                echo ""
+                local upd_user upd_pass
+                upd_user=$(prompt_input "Enter username to update")
+                if [[ -z "$upd_user" ]]; then
+                    print_fail "Username cannot be empty"
+                    continue
+                fi
+                upd_pass=$(prompt_input "Enter new password")
+                if [[ -z "$upd_pass" ]]; then
+                    print_fail "Password cannot be empty"
+                    continue
+                fi
+                echo ""
+                if sshtun-user update "$upd_user" --insecure-password "$upd_pass" 2>&1; then
+                    print_ok "Password updated for '${upd_user}'"
+                else
+                    print_fail "Failed to update user '${upd_user}'"
+                fi
+                ;;
+            4)
+                echo ""
+                local del_user
+                del_user=$(prompt_input "Enter username to delete")
+                if [[ -z "$del_user" ]]; then
+                    print_fail "Username cannot be empty"
+                    continue
+                fi
+                if prompt_yn "Are you sure you want to delete '${del_user}'?" "n"; then
+                    if sshtun-user delete "$del_user" 2>&1; then
+                        print_ok "User '${del_user}' deleted"
+                    else
+                        print_fail "Failed to delete user '${del_user}'"
+                    fi
+                else
+                    print_info "Cancelled"
+                fi
+                ;;
+            0)
+                echo ""
+                print_ok "Done"
+                exit 0
+                ;;
+            *)
+                print_warn "Invalid choice"
+                ;;
+        esac
+    done
+}
+
 # ─── Parse Arguments ────────────────────────────────────────────────────────────
 
 ADD_DOMAIN_MODE=false
 HARDEN_ONLY_MODE=false
+MANAGE_USERS_MODE=false
 DNSTT_MTU=1232
 
 while [[ $# -gt 0 ]]; do
@@ -922,6 +1050,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --add-domain)
             ADD_DOMAIN_MODE=true
+            shift
+            ;;
+        --users)
+            MANAGE_USERS_MODE=true
             shift
             ;;
         --harden)
@@ -2279,6 +2411,8 @@ if [[ "$HARDEN_ONLY_MODE" == true ]]; then
     do_harden
 elif [[ "$ADD_DOMAIN_MODE" == true ]]; then
     do_add_domain
+elif [[ "$MANAGE_USERS_MODE" == true ]]; then
+    do_manage_users
 else
     main
 fi
