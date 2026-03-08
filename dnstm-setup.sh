@@ -545,6 +545,42 @@ show_about() {
     echo ""
 }
 
+# ─── SlipNet URL Generator ────────────────────────────────────────────────────
+
+# Generate a slipnet:// deep-link URL for the SlipNet Android app.
+# Usage: generate_slipnet_url <tunnel_type> <subdomain> [pubkey] [ssh_user] [ssh_pass]
+#   tunnel_type: "slipstream" or "dnstt"
+#   subdomain:   e.g. "t2" or "d2"
+#   pubkey:      DNSTT public key (required for dnstt, empty for slipstream)
+#   ssh_user:    SSH tunnel username (optional)
+#   ssh_pass:    SSH tunnel password (optional)
+generate_slipnet_url() {
+    local tunnel_type="$1"
+    local subdomain="$2"
+    local pubkey="${3:-}"
+    local ssh_user="${4:-}"
+    local ssh_pass="${5:-}"
+    local name="${subdomain}.${DOMAIN}"
+    local ns_domain="${subdomain}.${DOMAIN}"
+    local resolver="8.8.8.8:53:0"
+    local ssh_enabled="" ssh_port="22" ssh_host="127.0.0.1"
+
+    if [[ -n "$ssh_user" && -n "$ssh_pass" ]]; then
+        ssh_enabled="1"
+    fi
+
+    # v16 pipe-delimited format (36 fields):
+    # 1:version 2:tunnelType 3:name 4:domain 5:resolvers 6:authMode 7:keepAlive
+    # 8:cc 9:port 10:host 11:gso 12:dnsttPublicKey 13:socksUser 14:socksPass
+    # 15:sshEnabled 16:sshUser 17:sshPass 18:sshPort 19:fwdDns 20:sshHost
+    # 21:useServerDns 22:dohUrl 23:dnsTransport 24:sshAuthType 25:sshPrivKey
+    # 26:sshKeyPass 27:torBridges 28:dnsttAuthoritative 29:naivePort
+    # 30:naiveUser 31:naivePass 32:isLocked 33:lockHash 34:expiration
+    # 35:allowSharing 36:boundDeviceId
+    local data="16|${tunnel_type}|${name}|${ns_domain}|${resolver}|0|5000|bbr|1080|127.0.0.1|0|${pubkey}|||${ssh_enabled}|${ssh_user}|${ssh_pass}|${ssh_port}|0|${ssh_host}|0||udp|password|||0|443||||0||0|0|"
+    echo "slipnet://$(echo -n "$data" | base64 -w0)"
+}
+
 # ─── Security Hardening Helpers ────────────────────────────────────────────────
 
 ensure_resolv_conf_fallback() {
@@ -1814,8 +1850,8 @@ step_summary() {
         echo ""
     fi
 
-    # Generate share URLs
-    echo -e "  ${BOLD}Share URLs (dnst://)${NC}"
+    # Generate share URLs (dnst:// for dnstc CLI)
+    echo -e "  ${BOLD}Share URLs — dnst:// (for dnstc CLI)${NC}"
     echo -e "  ${DIM}────────────────────────────────────────${NC}"
     local share_url
     for tag in slip1 dnstt1; do
@@ -1831,6 +1867,29 @@ step_summary() {
                 echo -e "  ${GREEN}${tag}:${NC} ${share_url}"
             fi
         done
+    fi
+    echo ""
+
+    # Generate SlipNet deep-link URLs (slipnet:// for SlipNet Android app)
+    echo -e "  ${BOLD}Share URLs — slipnet:// (for SlipNet app)${NC}"
+    echo -e "  ${DIM}────────────────────────────────────────${NC}"
+    local slipnet_url
+    # Slipstream + SOCKS
+    slipnet_url=$(generate_slipnet_url "slipstream" "t2" "" "" "")
+    echo -e "  ${GREEN}slip1:${NC}    ${slipnet_url}"
+    # DNSTT + SOCKS
+    if [[ -n "$DNSTT_PUBKEY" ]]; then
+        slipnet_url=$(generate_slipnet_url "dnstt" "d2" "$DNSTT_PUBKEY" "" "")
+        echo -e "  ${GREEN}dnstt1:${NC}   ${slipnet_url}"
+    fi
+    # SSH tunnels
+    if [[ "$SSH_SETUP_DONE" == true && -n "$SSH_USER" && -n "$SSH_PASS" ]]; then
+        slipnet_url=$(generate_slipnet_url "slipstream" "s2" "" "$SSH_USER" "$SSH_PASS")
+        echo -e "  ${GREEN}slip-ssh:${NC} ${slipnet_url}"
+        if [[ -n "$DNSTT_PUBKEY" ]]; then
+            slipnet_url=$(generate_slipnet_url "dnstt" "ds2" "$DNSTT_PUBKEY" "$SSH_USER" "$SSH_PASS")
+            echo -e "  ${GREEN}dnstt-ssh:${NC} ${slipnet_url}"
+        fi
     fi
     echo ""
 
@@ -2153,8 +2212,8 @@ do_add_domain() {
         echo ""
     fi
 
-    # Generate share URLs for new tunnels
-    echo -e "  ${BOLD}Share URLs (dnst://)${NC}"
+    # Generate share URLs for new tunnels (dnst:// for dnstc CLI)
+    echo -e "  ${BOLD}Share URLs — dnst:// (for dnstc CLI)${NC}"
     echo -e "  ${DIM}────────────────────────────────────────${NC}"
     local share_url
     for tag in "$slip_tag" "$dnstt_tag"; do
@@ -2169,6 +2228,26 @@ do_add_domain() {
             echo -e "  ${GREEN}${tag}:${NC} ${share_url}"
         fi
     done
+    echo ""
+
+    # Generate SlipNet deep-link URLs for new tunnels (slipnet:// for SlipNet app)
+    echo -e "  ${BOLD}Share URLs — slipnet:// (for SlipNet app)${NC}"
+    echo -e "  ${DIM}────────────────────────────────────────${NC}"
+    local slipnet_url
+    slipnet_url=$(generate_slipnet_url "slipstream" "t2" "" "" "")
+    echo -e "  ${GREEN}${slip_tag}:${NC}    ${slipnet_url}"
+    if [[ -n "$DNSTT_PUBKEY" ]]; then
+        slipnet_url=$(generate_slipnet_url "dnstt" "d2" "$DNSTT_PUBKEY" "" "")
+        echo -e "  ${GREEN}${dnstt_tag}:${NC}   ${slipnet_url}"
+    fi
+    if [[ -n "$SSH_USER" && -n "$SSH_PASS" ]]; then
+        slipnet_url=$(generate_slipnet_url "slipstream" "s2" "" "$SSH_USER" "$SSH_PASS")
+        echo -e "  ${GREEN}${slip_ssh_tag}:${NC} ${slipnet_url}"
+        if [[ -n "$DNSTT_PUBKEY" ]]; then
+            slipnet_url=$(generate_slipnet_url "dnstt" "ds2" "$DNSTT_PUBKEY" "$SSH_USER" "$SSH_PASS")
+            echo -e "  ${GREEN}${dnstt_ssh_tag}:${NC} ${slipnet_url}"
+        fi
+    fi
     echo ""
 
     echo -e "  ${DIM}To add more domains, run again: sudo bash $0 --add-domain${NC}"
