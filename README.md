@@ -189,7 +189,7 @@ The wizard has **12 steps**. Here's what each one does:
 <summary><b>Step 3 — 📝 DNS Records (Cloudflare)</b></summary>
 
 - Shows you exactly which DNS records to create in Cloudflare
-- Displays a formatted box with all 4 records (1 A + 3 NS)
+- Displays a formatted box with all 5 records (1 A + 4 NS)
 - Explains why "DNS Only" (grey cloud) is required
 - Waits for your confirmation before proceeding
 </details>
@@ -795,13 +795,14 @@ sudo bash dnstm-setup.sh --users
 | IPv4 | آدرس IP سرور شما |
 | Proxy | **DNS Only** (ابر خاکستری ⚪ — نه نارنجی 🟠!) |
 
-### رکوردهای 2 تا 4 — NS Record
+### رکوردهای 2 تا 5 — NS Record
 
 | Type | Name | Target |
 |---|---|---|
 | `NS` | `t2` | `ns.yourdomain.com` |
 | `NS` | `d2` | `ns.yourdomain.com` |
 | `NS` | `s2` | `ns.yourdomain.com` |
+| `NS` | `ds2` | `ns.yourdomain.com` |
 
 ### ⚠️ اشتباهات رایج
 
@@ -927,7 +928,9 @@ dnstm tunnel list
 
 # 🔗 ایجاد لینک اشتراک‌گذاری (dnst:// برای dnstc)
 dnstm tunnel share -t slip1
+dnstm tunnel share -t dnstt-ssh --user tunnel --password secret
 # لینک‌های slipnet:// برای اپ SlipNet خودکار در خلاصه نصب نمایش داده می‌شوند
+# — لینک رو تو گوشی اندروید باز کنید تا پروفایل وارد SlipNet بشه
 
 # 📊 بررسی وضعیت روتر
 dnstm router status
@@ -937,10 +940,16 @@ dnstm router logs
 
 # 🔍 مشاهده لاگ تانل خاص
 dnstm tunnel logs --tag slip1
+dnstm tunnel logs --tag dnstt1
+dnstm tunnel logs --tag slip-ssh
 
 # ⏹️ توقف / ▶️ شروع یک تانل
 dnstm tunnel stop --tag slip1
 dnstm tunnel start --tag slip1
+
+# 🔀 توقف / شروع روتر DNS
+dnstm router stop
+dnstm router start
 
 # 🧪 تست پروکسی SOCKS (بررسی پورت: ss -tlnp | grep microsocks)
 curl --socks5 127.0.0.1:<MICROSOCKS_PORT> https://api.ipify.org

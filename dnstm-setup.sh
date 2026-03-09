@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-VERSION="1.0"
+VERSION="1.1"
 TOTAL_STEPS=12
 
 # ─── Colors & Formatting ───────────────────────────────────────────────────────
@@ -550,7 +550,7 @@ show_about() {
 
 # Generate a slipnet:// deep-link URL for the SlipNet Android app.
 # Usage: generate_slipnet_url <tunnel_type> <subdomain> [pubkey] [ssh_user] [ssh_pass]
-#   tunnel_type: "slipstream" or "dnstt"
+#   tunnel_type: "ss", "dnstt", "slipstream_ssh", or "dnstt_ssh" (SlipNet constants)
 #   subdomain:   e.g. "t2" or "d2"
 #   pubkey:      DNSTT public key (required for dnstt, empty for slipstream)
 #   ssh_user:    SSH tunnel username (optional)
@@ -578,7 +578,7 @@ generate_slipnet_url() {
     # 26:sshKeyPass 27:torBridges 28:dnsttAuthoritative 29:naivePort
     # 30:naiveUser 31:naivePass 32:isLocked 33:lockHash 34:expiration
     # 35:allowSharing 36:boundDeviceId
-    local data="16|${tunnel_type}|${name}|${ns_domain}|${resolver}|0|5000|bbr|1080|127.0.0.1|0|${pubkey}|||${ssh_enabled}|${ssh_user}|${ssh_pass}|${ssh_port}|0|${ssh_host}|0||udp|password|||0|443||||0||0|0|"
+    local data="16|${tunnel_type}|${name}|${ns_domain}|${resolver}|0|5000|bbr|1080|127.0.0.1|0|${pubkey}|||${ssh_enabled}|${ssh_user}|${ssh_pass}|${ssh_port}|0|${ssh_host}|0||udp|password|||0|0|443|||0||0|0|"
     echo "slipnet://$(echo -n "$data" | base64 -w0)"
 }
 
@@ -628,7 +628,7 @@ EOF
     fi
 
     if [[ -e /run/systemd/resolve/resolv.conf ]]; then
-        ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+        ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf || true
     fi
 
     return 0
@@ -744,7 +744,7 @@ apply_service_hardening() {
         write_service_override "microsocks.service" "nobody" "nogroup" "no"
     fi
 
-    systemctl daemon-reload
+    systemctl daemon-reload 2>/dev/null || true
 
     local hardening_ok=true
     for unit in $dnstm_units microsocks.service; do
@@ -756,7 +756,7 @@ apply_service_hardening() {
                 print_warn "Failed to restart hardened unit: $unit — rolling back"
                 local dropin="/etc/systemd/system/${unit}.d/20-hardening.conf"
                 rm -f "$dropin"
-                systemctl daemon-reload
+                systemctl daemon-reload 2>/dev/null || true
                 systemctl reset-failed "$unit" 2>/dev/null || true
                 systemctl restart "$unit" 2>/dev/null || true
                 hardening_ok=false
@@ -780,6 +780,11 @@ do_harden() {
 
     if [[ $EUID -ne 0 ]]; then
         print_fail "Not running as root. Please run with: sudo bash $0 --harden"
+        exit 1
+    fi
+
+    if ! command -v dnstm &>/dev/null; then
+        print_fail "dnstm is not installed. Run the setup first before hardening."
         exit 1
     fi
 
@@ -890,7 +895,7 @@ do_uninstall() {
     systemctl enable systemd-resolved.service 2>/dev/null || true
     systemctl restart systemd-resolved.service 2>/dev/null || true
     if [[ -e /run/systemd/resolve/stub-resolv.conf ]]; then
-        ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+        ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf || true
     fi
     print_ok "Restored systemd-resolved defaults (best effort)"
 
@@ -926,8 +931,11 @@ do_manage_users() {
 
         # Run initial configure
         print_info "Applying SSH security configuration..."
-        sshtun-user configure 2>&1 || true
-        print_ok "SSH configuration applied"
+        if sshtun-user configure 2>&1; then
+            print_ok "SSH configuration applied"
+        else
+            print_warn "SSH configuration may not have applied fully — user management may have issues"
+        fi
         echo ""
     fi
 
@@ -943,8 +951,8 @@ do_manage_users() {
         echo -e "  ${BOLD}0${NC}  Exit"
         echo ""
 
-        local choice
-        read -rp "  Select [0-4]: " choice
+        local choice=""
+        read -rp "  Select [0-4]: " choice || true
 
         case "$choice" in
             1)
@@ -1077,6 +1085,17 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# ─── Validate conflicting flags ──────────────────────────────────────────────────
+
+mode_count=0
+[[ "$ADD_DOMAIN_MODE" == true ]] && ((mode_count++))
+[[ "$HARDEN_ONLY_MODE" == true ]] && ((mode_count++))
+[[ "$MANAGE_USERS_MODE" == true ]] && ((mode_count++))
+if [[ $mode_count -gt 1 ]]; then
+    echo "Error: --add-domain, --harden, and --users cannot be combined."
+    exit 1
+fi
+
 # ─── Variables (populated during setup) ─────────────────────────────────────────
 
 DOMAIN=""
@@ -1164,6 +1183,8 @@ step_ask_domain() {
             print_fail "Domain cannot be empty. Please try again."
         elif [[ ! "$DOMAIN" =~ \. ]]; then
             print_fail "Invalid domain (must contain a dot). Please try again."
+        elif [[ "$DOMAIN" =~ \.\. ]]; then
+            print_fail "Invalid domain (consecutive dots not allowed). Please try again."
         elif [[ ! "$DOMAIN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$ ]]; then
             print_fail "Invalid domain (use only letters, numbers, dots, hyphens). Please try again."
         else
@@ -1831,7 +1852,7 @@ step_tests() {
     elif ss -tlnp 2>/dev/null | grep -q "microsocks"; then
         print_warn "SOCKS proxy: LISTENING on port ${socks_port} but connectivity test failed"
         print_info "microsocks is running but outbound may be blocked or tunnels not ready"
-        pass=$((pass + 1))
+        fail=$((fail + 1))
     else
         print_fail "SOCKS proxy: FAIL (microsocks not running)"
         fail=$((fail + 1))
@@ -2144,6 +2165,8 @@ do_add_domain() {
             print_fail "Domain cannot be empty. Please try again."
         elif [[ ! "$DOMAIN" =~ \. ]]; then
             print_fail "Invalid domain (must contain a dot). Please try again."
+        elif [[ "$DOMAIN" =~ \.\. ]]; then
+            print_fail "Invalid domain (consecutive dots not allowed). Please try again."
         elif [[ ! "$DOMAIN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$ ]]; then
             print_fail "Invalid domain (use only letters, numbers, dots, hyphens). Please try again."
         elif echo "$existing_domains" | grep -qx "$DOMAIN"; then
@@ -2354,12 +2377,10 @@ do_add_domain() {
             echo -e "  ${GREEN}${tag}:${NC} ${share_url}"
         fi
     done
-    for tag in "$slip_ssh_tag" "$dnstt_ssh_tag"; do
-        share_url=$(dnstm tunnel share -t "$tag" 2>/dev/null || true)
-        if [[ -n "$share_url" ]]; then
-            echo -e "  ${GREEN}${tag}:${NC} ${share_url}"
-        fi
-    done
+    echo ""
+    echo -e "  ${DIM}Note: SSH tunnel share URLs require credentials. Generate them with:${NC}"
+    echo -e "  ${DIM}  dnstm tunnel share -t ${slip_ssh_tag} --user <username> --password <pass>${NC}"
+    echo -e "  ${DIM}  dnstm tunnel share -t ${dnstt_ssh_tag} --user <username> --password <pass>${NC}"
     echo ""
 
     # Generate SlipNet deep-link URLs for new tunnels (slipnet:// for SlipNet app)
@@ -2371,14 +2392,6 @@ do_add_domain() {
     if [[ -n "$DNSTT_PUBKEY" ]]; then
         slipnet_url=$(generate_slipnet_url "dnstt" "d2" "$DNSTT_PUBKEY" "" "")
         echo -e "  ${GREEN}${dnstt_tag}:${NC}   ${slipnet_url}"
-    fi
-    if [[ -n "$SSH_USER" && -n "$SSH_PASS" ]]; then
-        slipnet_url=$(generate_slipnet_url "slipstream_ssh" "s2" "" "$SSH_USER" "$SSH_PASS")
-        echo -e "  ${GREEN}${slip_ssh_tag}:${NC} ${slipnet_url}"
-        if [[ -n "$DNSTT_PUBKEY" ]]; then
-            slipnet_url=$(generate_slipnet_url "dnstt_ssh" "ds2" "$DNSTT_PUBKEY" "$SSH_USER" "$SSH_PASS")
-            echo -e "  ${GREEN}${dnstt_ssh_tag}:${NC} ${slipnet_url}"
-        fi
     fi
     echo ""
 
