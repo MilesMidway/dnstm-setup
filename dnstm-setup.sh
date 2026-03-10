@@ -796,7 +796,7 @@ generate_slipnet_url() {
     local name="${subdomain}.${DOMAIN}"
     local ns_domain="${subdomain}.${DOMAIN}"
     local resolver="8.8.8.8:53:0"
-    local ssh_enabled="" ssh_port="22" ssh_host="127.0.0.1"
+    local ssh_enabled="0" ssh_port="22" ssh_host="127.0.0.1"
     local auth_mode="0"
 
     if [[ -n "$ssh_user" && -n "$ssh_pass" ]]; then
@@ -1055,18 +1055,22 @@ do_remove_tunnel() {
         exit 1
     fi
 
+    # Cache tunnel list output (reused throughout)
+    local tunnel_output
+    tunnel_output=$(dnstm tunnel list 2>/dev/null || true)
+
     # Show current tunnels
     print_header "Remove Tunnel"
     echo ""
     print_info "Current tunnels:"
     echo ""
-    dnstm tunnel list 2>/dev/null || true
+    echo "$tunnel_output"
     echo ""
 
     # If no tag given, ask interactively
     if [[ -z "$target_tag" ]]; then
         local tags
-        tags=$(dnstm tunnel list 2>/dev/null | grep -o 'tag=[^ ]*' | sed 's/tag=//' || true)
+        tags=$(echo "$tunnel_output" | grep -o 'tag=[^ ]*' | sed 's/tag=//' || true)
         if [[ -z "$tags" ]]; then
             print_warn "No tunnels found."
             exit 0
@@ -1077,7 +1081,7 @@ do_remove_tunnel() {
         local tag_arr=()
         for tag in $tags; do
             local domain_info
-            domain_info=$(dnstm tunnel list 2>/dev/null | awk -v t="tag=${tag}" '{for(i=1;i<=NF;i++) if($i==t){print;next}}' | grep -o 'domain=[^ ]*' | sed 's/domain=//' || true)
+            domain_info=$(echo "$tunnel_output" | awk -v t="tag=${tag}" '{for(i=1;i<=NF;i++) if($i==t){print;next}}' | grep -o 'domain=[^ ]*' | sed 's/domain=//' || true)
             echo -e "  ${BOLD}${i})${NC}  ${tag}  ${DIM}(${domain_info})${NC}"
             tag_arr+=("$tag")
             i=$((i + 1))
@@ -1100,16 +1104,16 @@ do_remove_tunnel() {
     fi
 
     # Verify tunnel exists
-    if ! dnstm tunnel list 2>/dev/null | grep -o 'tag=[^ ]*' | grep -qxF "tag=${target_tag}"; then
+    if ! echo "$tunnel_output" | grep -o 'tag=[^ ]*' | grep -qxF "tag=${target_tag}"; then
         print_fail "Tunnel '${target_tag}' not found."
         echo ""
         print_info "Available tunnels:"
-        dnstm tunnel list 2>/dev/null | grep -o 'tag=[^ ]*' | sed 's/tag=/  /' || true
+        echo "$tunnel_output" | grep -o 'tag=[^ ]*' | sed 's/tag=/  /' || true
         exit 1
     fi
 
     local domain_info
-    domain_info=$(dnstm tunnel list 2>/dev/null | awk -v t="tag=${target_tag}" '{for(i=1;i<=NF;i++) if($i==t){print;next}}' | grep -o 'domain=[^ ]*' | sed 's/domain=//' || true)
+    domain_info=$(echo "$tunnel_output" | awk -v t="tag=${target_tag}" '{for(i=1;i<=NF;i++) if($i==t){print;next}}' | grep -o 'domain=[^ ]*' | sed 's/domain=//' || true)
 
     echo ""
     if ! prompt_yn "Remove tunnel '${target_tag}' (${domain_info})?" "n"; then
@@ -1588,6 +1592,7 @@ do_manage_users() {
                 echo ""
                 local new_user new_pass
                 new_user=$(prompt_input "Enter username for new tunnel user")
+                new_user=$(echo "$new_user" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
                 if [[ -z "$new_user" ]]; then
                     print_fail "Username cannot be empty"
                     continue
@@ -1597,6 +1602,11 @@ do_manage_users() {
                     continue
                 fi
                 new_pass=$(prompt_input "Enter password (leave blank to auto-generate)")
+                new_pass=$(echo "$new_pass" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+                if [[ "$new_pass" == *"|"* ]]; then
+                    print_fail "Password cannot contain the | character"
+                    continue
+                fi
                 echo ""
                 if [[ -n "$new_pass" ]]; then
                     if sshtun-user create "$new_user" --insecure-password "$new_pass" 2>&1; then
@@ -1616,13 +1626,23 @@ do_manage_users() {
                 echo ""
                 local upd_user upd_pass
                 upd_user=$(prompt_input "Enter username to update")
+                upd_user=$(echo "$upd_user" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
                 if [[ -z "$upd_user" ]]; then
                     print_fail "Username cannot be empty"
                     continue
                 fi
+                if [[ "$upd_user" == *"|"* ]]; then
+                    print_fail "Username cannot contain the | character"
+                    continue
+                fi
                 upd_pass=$(prompt_input "Enter new password")
+                upd_pass=$(echo "$upd_pass" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
                 if [[ -z "$upd_pass" ]]; then
                     print_fail "Password cannot be empty"
+                    continue
+                fi
+                if [[ "$upd_pass" == *"|"* ]]; then
+                    print_fail "Password cannot contain the | character"
                     continue
                 fi
                 echo ""
@@ -2428,6 +2448,7 @@ step_verify_microsocks() {
     if prompt_yn "Enable SOCKS5 authentication for the proxy?" "y"; then
         echo ""
         SOCKS_USER=$(prompt_input "Enter SOCKS proxy username" "proxy")
+        SOCKS_USER=$(echo "$SOCKS_USER" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
         if [[ -z "$SOCKS_USER" ]]; then
             print_fail "Username cannot be empty"
             SOCKS_USER="proxy"
@@ -2438,6 +2459,7 @@ step_verify_microsocks() {
             SOCKS_USER="proxy"
         fi
         SOCKS_PASS=$(prompt_input "Enter SOCKS proxy password")
+        SOCKS_PASS=$(echo "$SOCKS_PASS" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
         if [[ -z "$SOCKS_PASS" ]]; then
             print_fail "Password cannot be empty — disabling SOCKS auth"
             SOCKS_USER=""
@@ -2574,6 +2596,7 @@ step_ssh_user() {
 
     # Get username
     SSH_USER=$(prompt_input "Enter username for SSH tunnel user" "tunnel")
+    SSH_USER=$(echo "$SSH_USER" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
     if [[ -z "$SSH_USER" ]]; then
         print_fail "Username cannot be empty"
         return
@@ -2585,6 +2608,7 @@ step_ssh_user() {
 
     # Get password
     SSH_PASS=$(prompt_input "Enter password for SSH tunnel user")
+    SSH_PASS=$(echo "$SSH_PASS" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
     if [[ -z "$SSH_PASS" ]]; then
         print_fail "Password cannot be empty"
         return
