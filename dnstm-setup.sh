@@ -1506,7 +1506,7 @@ detect_architecture() {
             echo "armv7"
             ;;
         *)
-            print_warn "Unsupported architecture: $machine_arch (defaulting to amd64)"
+            print_warn "Unsupported architecture: $machine_arch (defaulting to amd64)" >&2
             echo "amd64"
             ;;
     esac
